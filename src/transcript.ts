@@ -8,12 +8,11 @@ export type ContextualizedTranscriptText = {
 export async function buildTranscriptText(
   userPrompt: string,
   transcript: Transcript,
-  client: AssemblyAI
+  client: AssemblyAI,
 ): Promise<ContextualizedTranscriptText> {
   if (transcript.speaker_labels === true) {
     return await buildDiarizedText(userPrompt, transcript, client);
-  }
-  else {
+  } else {
     return await buildParagraphdText(transcript, client);
   }
 }
@@ -21,13 +20,12 @@ export async function buildTranscriptText(
 async function buildDiarizedText(
   userPrompt: string,
   transcript: Transcript,
-  client: AssemblyAI
+  client: AssemblyAI,
 ): Promise<ContextualizedTranscriptText> {
-  let text = '';
+  let text = "";
   const includeHourInTimestamp = transcript.audio_duration! > 3600;
   for (let utterance of transcript.utterances!) {
-    text +=
-      `Speaker ${utterance.speaker} (${formatTimestamp(utterance.start, includeHourInTimestamp)}): ${utterance.text}\n`;
+    text += `Speaker ${utterance.speaker} (${formatTimestamp(utterance.start, includeHourInTimestamp)}): ${utterance.text}\n`;
   }
 
   return await identifySpeakers(userPrompt, text, client);
@@ -36,7 +34,7 @@ async function buildDiarizedText(
 async function identifySpeakers(
   userPrompt: string,
   text: string,
-  client: AssemblyAI
+  client: AssemblyAI,
 ): Promise<ContextualizedTranscriptText> {
   let prompt = `
 Be succinct and don't include a preamble.
@@ -53,7 +51,7 @@ ${text}"
     prompt,
     input_text: text,
     context: `Here is the original user prompt that triggered this task: ${userPrompt}`,
-    final_model: "anthropic/claude-3-5-sonnet"
+    final_model: "anthropic/claude-3-5-sonnet",
   });
   try {
     console.log("taskResponse", taskResponse);
@@ -61,7 +59,10 @@ ${text}"
 
     for (const key in jsonResponse) {
       const speakerIdPrefix = key.startsWith("Speaker ") ? "" : "Speaker ";
-      text = text.replaceAll(`${speakerIdPrefix}${key}`, `${jsonResponse[key]}`);
+      text = text.replaceAll(
+        `${speakerIdPrefix}${key}`,
+        `${jsonResponse[key]}`,
+      );
     }
     return { text, context: jsonResponse.context };
   } catch (err) {
@@ -70,8 +71,11 @@ ${text}"
   return { text };
 }
 
-async function buildParagraphdText(transcript: Transcript, client: AssemblyAI): Promise<ContextualizedTranscriptText> {
-  let text = '';
+async function buildParagraphdText(
+  transcript: Transcript,
+  client: AssemblyAI,
+): Promise<ContextualizedTranscriptText> {
+  let text = "";
   const paragraphsResponse = await client.transcripts.paragraphs(transcript.id);
   for (let paragraph of paragraphsResponse.paragraphs) {
     text += `${paragraph.text}\n\n`;
@@ -80,17 +84,20 @@ async function buildParagraphdText(transcript: Transcript, client: AssemblyAI): 
   return { text };
 }
 
-function formatTimestamp(start: number, includeHourInTimestamp: boolean): string {
+function formatTimestamp(
+  start: number,
+  includeHourInTimestamp: boolean,
+): string {
   start = start / 1000; // Convert to seconds
   const hours = Math.floor(start / 3600);
   const minutes = Math.floor((start % 3600) / 60);
   const seconds = Math.floor(start % 60);
 
-  const formattedHours = hours.toString().padStart(2, '0');
-  const formattedMinutes = minutes.toString().padStart(2, '0');
-  const formattedSeconds = seconds.toString().padStart(2, '0');
+  const formattedHours = hours.toString().padStart(2, "0");
+  const formattedMinutes = minutes.toString().padStart(2, "0");
+  const formattedSeconds = seconds.toString().padStart(2, "0");
 
-  return includeHourInTimestamp ?
-    `${formattedHours}:${formattedMinutes}:${formattedSeconds}` :
-    `${formattedMinutes}:${formattedSeconds}`;
+  return includeHourInTimestamp
+    ? `${formattedHours}:${formattedMinutes}:${formattedSeconds}`
+    : `${formattedMinutes}:${formattedSeconds}`;
 }

@@ -102,99 +102,99 @@ export const languageOptions = Object.entries({
   vi: "Vietnamese",
   cy: "Welsh",
   yi: "Yiddish",
-  yo: "Yoruba"
-}).map(([languageCode, label]) => (
-  {
-    "text": {
-      "type": "plain_text",
-      "text": label,
-      "emoji": false
-    },
-    "value": languageCode
-  } as PlainTextOption
-));
+  yo: "Yoruba",
+}).map(
+  ([languageCode, label]) =>
+    ({
+      text: {
+        type: "plain_text",
+        text: label,
+        emoji: false,
+      },
+      value: languageCode,
+    }) as PlainTextOption,
+);
 
 export const languageInputBlock: InputBlock = {
-  "type": "input",
-  "block_id": "language-input",
-  "hint": {
+  type: "input",
+  block_id: "language-input",
+  hint: {
     text: "If you leave it blank and we'll try to detect it for you.",
     type: "plain_text",
-    "emoji": false
+    emoji: false,
   },
   optional: true,
-  "element": {
+  element: {
     action_id: "language-options-action",
-    "type": "external_select",
-    "placeholder": {
-      "type": "plain_text",
-      "text": "Select a language",
-      "emoji": false
+    type: "external_select",
+    placeholder: {
+      type: "plain_text",
+      text: "Select a language",
+      emoji: false,
     },
-    "min_query_length": 1
+    min_query_length: 1,
   },
-  "label": {
-    "type": "plain_text",
-    "text": "What language is the file?",
-    "emoji": false
-  }
+  label: {
+    type: "plain_text",
+    text: "What language is the file?",
+    emoji: false,
+  },
 } as const;
 
-export const transcribeOptionsBlock: InputBlock =
-  {
-    "type": "input",
-    "block_id": "transcribe-options-input",
-    "element": {
-      action_id: "transcribe-options-action",
-      "type": "checkboxes",
-      "options": [
-        {
-          "text": {
-            "type": "plain_text",
-            "text": "Add speaker labels",
-            "emoji": false
-          },
-          "value": "speaker_labels"
+export const transcribeOptionsBlock: InputBlock = {
+  type: "input",
+  block_id: "transcribe-options-input",
+  element: {
+    action_id: "transcribe-options-action",
+    type: "checkboxes",
+    options: [
+      {
+        text: {
+          type: "plain_text",
+          text: "Add speaker labels",
+          emoji: false,
         },
-        {
-          "text": {
-            "type": "plain_text",
-            "text": "Identify speakers",
-            "emoji": false
-          },
-          "value": "identify_speakers"
+        value: "speaker_labels",
+      },
+      {
+        text: {
+          type: "plain_text",
+          text: "Identify speakers",
+          emoji: false,
         },
-        {
-          "text": {
-            "type": "plain_text",
-            "text": "Generate summary",
-            "emoji": false
-          },
-          "value": "generate_summary"
-        }
-      ]
-    },
-    "label": {
-      "type": "plain_text",
-      "text": "Options",
-      "emoji": true
-    }
-  } as const;
+        value: "identify_speakers",
+      },
+      {
+        text: {
+          type: "plain_text",
+          text: "Generate summary",
+          emoji: false,
+        },
+        value: "generate_summary",
+      },
+    ],
+  },
+  label: {
+    type: "plain_text",
+    text: "Options",
+    emoji: true,
+  },
+} as const;
 
 export const transcribeBlocks: (KnownBlock | Block)[] = [
   languageInputBlock,
   transcribeOptionsBlock,
   {
-    "type": "actions",
-    "elements": [
+    type: "actions",
+    elements: [
       {
-        "type": "button",
-        "text": {
-          "type": "plain_text",
-          "text": "Transcribe"
+        type: "button",
+        text: {
+          type: "plain_text",
+          text: "Transcribe",
         },
-        "action_id": "transcribe-action"
-      }
-    ]
-  }
+        action_id: "transcribe-action",
+      },
+    ],
+  },
 ];
