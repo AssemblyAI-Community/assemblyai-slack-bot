@@ -20,6 +20,10 @@ npm run start
 npm run watch
 ```
 
-## Useful links:
+## Notes
+
+- Why are we using legacy attachments instead of Blocks? Slack Blocks are more restrictive in character length which transcripts can easily exceed. We can still use Block for non-transcript content.
+
+## Useful links
 - [Getting started with Bolt for JavaScript and HTTP](https://tools.slack.dev/bolt-js/tutorial/getting-started-http/)
 - [Bolt JS](https://github.com/slackapi/bolt-js)
