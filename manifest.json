@@ -10,7 +10,7 @@
         "slash_commands": [
             {
                 "command": "/transcribe",
-                "url": "https://2cf5-72-221-14-208.ngrok-free.app/slack/events",
+                "url": "https://alert-walleye-rational.ngrok-free.app/slack/events",
                 "description": "Transcribe audio or video in Slack or online",
                 "should_escape": false
             }
@@ -32,11 +32,16 @@
     },
     "settings": {
         "event_subscriptions": {
-            "request_url": "https://2cf5-72-221-14-208.ngrok-free.app/slack/events",
+            "request_url": "https://alert-walleye-rational.ngrok-free.app/slack/events",
             "bot_events": [
                 "app_home_opened",
                 "app_mention"
             ]
+        },
+        "interactivity": {
+            "is_enabled": true,
+            "request_url": "https://alert-walleye-rational.ngrok-free.app/slack/events",
+            "message_menu_options_url": "https://alert-walleye-rational.ngrok-free.app/slack/events"
         },
         "org_deploy_enabled": false,
         "socket_mode_enabled": false,

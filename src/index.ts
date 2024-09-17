@@ -1,7 +1,9 @@
 import "dotenv/config";
-import { App, Context, MessageAttachment } from "@slack/bolt";
-import { AssemblyAI, FileUploadData } from "assemblyai";
+import { App, BlockAction, BlockElementAction, Context } from "@slack/bolt";
+import Fuse from 'fuse.js';
+import { AssemblyAI } from "assemblyai";
 import { buildTranscriptText } from "./transcript";
+import { languageInputBlock, languageOptions, transcribeBlocks, transcribeOptionsBlock } from "./blocks";
 
 const botToken = process.env.SLACK_BOT_TOKEN;
 
@@ -12,6 +14,8 @@ const app = new App({
 
 const aaiClient = new AssemblyAI({
   apiKey: process.env.ASSEMBLYAI_API_KEY!,
+  // proxyman proxy
+  baseUrl: 'http://localhost:10000'
 });
 
 // All the room in the world for your code
@@ -67,9 +71,8 @@ app.event("app_home_opened", async ({ event, client, context }) => {
 });
 
 // Listen for slash commands
-app.command("/transcribe", async ({ ack, respond, ...stuff }) => {
+app.command("/transcribe", async ({ ack, respond }) => {
   try {
-    console.log(stuff);
     await ack();
     await respond("Responding to the sample command!");
   } catch (error) {
@@ -77,21 +80,38 @@ app.command("/transcribe", async ({ ack, respond, ...stuff }) => {
   }
 });
 
-// subscribe to 'app_mention' event in your App config
-// need app_mentions:read and chat:write scopes
-app.event("app_mention", async ({ event, context, client, say, ...stuff }) => {
+app.options("language-options-action", async ({ ack, payload }) => {
+  const fuse = new Fuse(languageOptions, {
+    keys: [
+      "text.text"
+    ],
+    shouldSort: true,
+    threshold: 0.5,
+  });
+
+  const filteredOptions = fuse.search(payload.value);
+
+  await ack({
+    options: filteredOptions.map(option => option.item).slice(0, 10)
+  });
+});
+
+app.action({ type: 'block_actions', action_id: 'transcribe-action' }, async ({ ack, say, body, client, action, context }) => {
   try {
-    let replies = await app.client.conversations.replies({
+    await ack();
+    const channelId = body.container.channel_id as string; // TODO, check
+    const threadTs = body.container.thread_ts as string; // TODO, check
+    let replies = await client.conversations.replies({
       token: botToken,
-      channel: event.channel,
-      ts: event.thread_ts! // TODO, check
+      channel: channelId,
+      ts: threadTs
     });
     const fileName = replies.messages![0].files![0].name;  // TODO, make more robust
     const footer = `Transcript for ${fileName}`;
     const defaultText = `Working on it...`;
-    let message = await say({
+    let message = await say!({ // TODO, check
       text: defaultText,
-      thread_ts: event.thread_ts!
+      thread_ts: threadTs
     });
     const download = await downloadSlackFile(
       replies.messages![0].files![0].url_private_download!,
@@ -100,7 +120,7 @@ app.event("app_mention", async ({ event, context, client, say, ...stuff }) => {
 
     client.chat.update({
       token: botToken,
-      channel: event.channel,
+      channel: message.channel!,
       ts: message.ts!,
       text: defaultText,
       attachments: [{
@@ -116,10 +136,19 @@ app.event("app_mention", async ({ event, context, client, say, ...stuff }) => {
     });
 
     const uploadedFileUrl = await aaiClient.files.upload(download.body!); // TODO: check
+
+    const selectLanguage = body.state!.values[languageInputBlock.block_id!][languageInputBlock.element.action_id!].selected_option?.value;
+    const selectedOptions = body.state!.values[transcribeOptionsBlock.block_id!]
+    [transcribeOptionsBlock.element.action_id!]!.selected_options?.map(o => o.value);
+    const speakerLabels = selectedOptions?.includes('speaker_labels') || false;
+    const identifySpeakers = selectedOptions?.includes('identify_speakers') || false;
+    const generateSummary = selectedOptions?.includes('generate_summary') || false;
+
     let transcript = await aaiClient.transcripts.submit({
       audio_url: uploadedFileUrl,
-      language_detection: true,
-      speaker_labels: true,
+      language_code: selectLanguage ?? null,
+      language_detection: selectLanguage == null ? true : false,
+      speaker_labels: speakerLabels,
     });
     const transcriptIdField =
     {
@@ -129,7 +158,7 @@ app.event("app_mention", async ({ event, context, client, say, ...stuff }) => {
     };
     client.chat.update({
       token: botToken,
-      channel: event.channel,
+      channel: message.channel!,
       ts: message.ts!,
       text: defaultText,
       attachments: [{
@@ -149,7 +178,7 @@ app.event("app_mention", async ({ event, context, client, say, ...stuff }) => {
 
     client.chat.update({
       token: botToken,
-      channel: event.channel,
+      channel: message.channel!,
       ts: message.ts!,
       text: defaultText,
       attachments: [{
@@ -164,12 +193,12 @@ app.event("app_mention", async ({ event, context, client, say, ...stuff }) => {
         ]
       }],
     });
-    const contextualizedTranscriptText = await buildTranscriptText(event.text, transcript, aaiClient);
+    const contextualizedTranscriptText = await buildTranscriptText('', transcript, aaiClient);
     console.log("transcript", contextualizedTranscriptText.text);
     console.log("context", contextualizedTranscriptText.context);
     client.chat.update({
       token: botToken,
-      channel: event.channel,
+      channel: message.channel!,
       ts: message.ts!,
       text: 'Here is the transcript:',
       attachments: [{
@@ -184,15 +213,30 @@ app.event("app_mention", async ({ event, context, client, say, ...stuff }) => {
           transcriptIdField
         ]
       },
-      ],
-      thread_ts: event.thread_ts!
+      ]
     });
     if (contextualizedTranscriptText.context) {
-      await say({
+      await say!({
         text: contextualizedTranscriptText.context,
-        thread_ts: event.thread_ts!
+        thread_ts: threadTs
       });
     }
+  } catch (error) {
+    console.error(error);
+  }
+})
+
+// subscribe to 'app_mention' event in your App config
+// need app_mentions:read and chat:write scopes
+app.event("app_mention", async ({ event, context, client, say }) => {
+  try {
+    await client.chat.postEphemeral({
+      channel: event.channel,
+      thread_ts: event.thread_ts,
+      text: "Fill out these fields to transcribe your file",
+      user: event.user!, // TODO, make more robust
+      blocks: transcribeBlocks,
+    })
   } catch (error) {
     console.error(error);
   }
