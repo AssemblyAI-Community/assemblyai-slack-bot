@@ -1,0 +1,45 @@
+{
+    "display_information": {
+        "name": "AssemblyAI bot"
+    },
+    "features": {
+        "bot_user": {
+            "display_name": "AssemblyAI bot",
+            "always_online": false
+        },
+        "slash_commands": [
+            {
+                "command": "/transcribe",
+                "url": "https://2cf5-72-221-14-208.ngrok-free.app/slack/events",
+                "description": "Transcribe audio or video in Slack or online",
+                "should_escape": false
+            }
+        ]
+    },
+    "oauth_config": {
+        "scopes": {
+            "bot": [
+                "app_mentions:read",
+                "chat:write",
+                "commands",
+                "files:read",
+                "channels:history",
+                "groups:history",
+                "mpim:history",
+                "im:history"
+            ]
+        }
+    },
+    "settings": {
+        "event_subscriptions": {
+            "request_url": "https://2cf5-72-221-14-208.ngrok-free.app/slack/events",
+            "bot_events": [
+                "app_home_opened",
+                "app_mention"
+            ]
+        },
+        "org_deploy_enabled": false,
+        "socket_mode_enabled": false,
+        "token_rotation_enabled": false
+    }
+}
