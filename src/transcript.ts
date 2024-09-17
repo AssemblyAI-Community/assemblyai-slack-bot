@@ -10,11 +10,7 @@ export async function buildTranscriptText(
   transcript: Transcript,
   client: AssemblyAI
 ): Promise<ContextualizedTranscriptText> {
-  const speakers = new Set();
-  for (let utterance of transcript.utterances!) {
-    speakers.add(utterance.speaker);
-  }
-  if (speakers.size > 1) {
+  if (transcript.speaker_labels === true) {
     return await buildDiarizedText(userPrompt, transcript, client);
   }
   else {
