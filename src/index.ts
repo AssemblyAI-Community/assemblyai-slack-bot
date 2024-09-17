@@ -1,14 +1,21 @@
 import "dotenv/config";
-import { App, BlockAction, BlockElementAction, Context } from "@slack/bolt";
+import { App, Context } from "@slack/bolt";
 import Fuse from "fuse.js";
-import { AssemblyAI } from "assemblyai";
-import { buildTranscriptText } from "./transcript";
 import {
+  buildDiarizedTranscriptText,
+  buildParagraphdTranscriptText,
+  identifySpeakers,
+  summarizeTranscript,
+} from "./transcript";
+import {
+  buildTranscriptMessage,
   languageInputBlock,
   languageOptions,
   transcribeBlocks,
   transcribeOptionsBlock,
+  TranscriptMessageData,
 } from "./blocks";
+import { getAssemblyAIClient } from "./assemblyai-client";
 
 const botToken = process.env.SLACK_BOT_TOKEN;
 
@@ -17,11 +24,7 @@ const app = new App({
   signingSecret: process.env.SLACK_SIGNING_SECRET,
 });
 
-const aaiClient = new AssemblyAI({
-  apiKey: process.env.ASSEMBLYAI_API_KEY!,
-  // proxyman proxy
-  baseUrl: "http://localhost:10000",
-});
+const aaiClient = getAssemblyAIClient();
 
 // All the room in the world for your code
 app.event("app_home_opened", async ({ event, client, context }) => {
@@ -106,44 +109,6 @@ app.action(
       await ack();
       const channelId = body.container.channel_id as string; // TODO, check
       const threadTs = body.container.thread_ts as string; // TODO, check
-      let replies = await client.conversations.replies({
-        token: botToken,
-        channel: channelId,
-        ts: threadTs,
-      });
-      const fileName = replies.messages![0].files![0].name; // TODO, make more robust
-      const footer = `Transcript for ${fileName}`;
-      const defaultText = `Working on it...`;
-      let message = await say!({
-        // TODO, check
-        text: defaultText,
-        thread_ts: threadTs,
-      });
-      const download = await downloadSlackFile(
-        replies.messages![0].files![0].url_private_download!,
-        context,
-      );
-
-      client.chat.update({
-        token: botToken,
-        channel: message.channel!,
-        ts: message.ts!,
-        text: defaultText,
-        attachments: [
-          {
-            footer,
-            fields: [
-              {
-                title: "Status",
-                value: "Uploading file",
-                short: true,
-              },
-            ],
-          },
-        ],
-      });
-
-      const uploadedFileUrl = await aaiClient.files.upload(download.body!); // TODO: check
 
       const selectLanguage =
         body.state!.values[languageInputBlock.block_id!][
@@ -154,96 +119,132 @@ app.action(
       ][transcribeOptionsBlock.element.action_id!]!.selected_options?.map(
         (o) => o.value,
       );
-      const speakerLabels =
+      const shouldAddSpeakerLabels =
         selectedOptions?.includes("speaker_labels") || false;
-      const identifySpeakers =
+      const shouldIdentifySpeakers =
         selectedOptions?.includes("identify_speakers") || false;
-      const generateSummary =
+      const shouldGenerateSummary =
         selectedOptions?.includes("generate_summary") || false;
+      const statuses = ["Uploading file", "Transcribing"];
+      statuses.push(
+        shouldAddSpeakerLabels && shouldIdentifySpeakers
+          ? "Identifying speakers" // add speaker labels and identify speakers
+          : "Formatting", // build transcript by paragraphs
+      );
+      if (shouldGenerateSummary) statuses.push("Generating summary");
+      statuses.push("Completed");
+      const getTextAndStatus = () => {
+        const status = statuses.shift()!;
+        const text =
+          statuses.length > 0 ? "Working on it..." : "Here is the transcript:";
+        return { text, status };
+      };
+      let text: string;
+      let status: string;
+
+      let replies = await client.conversations.replies({
+        token: botToken,
+        channel: channelId,
+        ts: threadTs,
+      });
+      const fileName = replies.messages![0].files![0].name!; // TODO, make more robust
+      const footer = `Transcript for ${fileName}`;
+      ({ text, status } = getTextAndStatus());
+      let transcriptMessageData: TranscriptMessageData = {
+        text,
+        fileName,
+        status,
+      };
+      let message = await say!({
+        // TODO, check
+        thread_ts: threadTs,
+        token: botToken,
+        ...buildTranscriptMessage(transcriptMessageData),
+      });
+      const download = await downloadSlackFile(
+        replies.messages![0].files![0].url_private_download!,
+        context,
+      );
+
+      const uploadedFileUrl = await aaiClient.files.upload(download.body!); // TODO: check
 
       let transcript = await aaiClient.transcripts.submit({
         audio_url: uploadedFileUrl,
         language_code: selectLanguage ?? null,
         language_detection: selectLanguage == null ? true : false,
-        speaker_labels: speakerLabels,
+        speaker_labels: shouldAddSpeakerLabels,
       });
-      const transcriptIdField = {
-        title: "ID",
-        value: transcript.id,
-        short: true,
-      };
+
+      ({ text, status } = getTextAndStatus());
+      transcriptMessageData.text = text;
+      transcriptMessageData.status = status;
+      transcriptMessageData.id = transcript.id;
       client.chat.update({
         token: botToken,
         channel: message.channel!,
         ts: message.ts!,
-        text: defaultText,
-        attachments: [
-          {
-            footer,
-            fields: [
-              {
-                title: "Status",
-                value: "Transcribing",
-                short: true,
-              },
-              transcriptIdField,
-            ],
-          },
-        ],
+        ...buildTranscriptMessage(transcriptMessageData),
       });
 
       transcript = await aaiClient.transcripts.waitUntilReady(transcript.id);
 
-      client.chat.update({
-        token: botToken,
-        channel: message.channel!,
-        ts: message.ts!,
-        text: defaultText,
-        attachments: [
-          {
-            footer,
-            fields: [
-              {
-                title: "Status",
-                value: "Formatting",
-                short: true,
-              },
-              transcriptIdField,
-            ],
-          },
-        ],
-      });
-      const contextualizedTranscriptText = await buildTranscriptText(
-        "",
-        transcript,
-        aaiClient,
-      );
-      console.log("transcript", contextualizedTranscriptText.text);
-      console.log("context", contextualizedTranscriptText.context);
-      client.chat.update({
-        token: botToken,
-        channel: message.channel!,
-        ts: message.ts!,
-        text: "Here is the transcript:",
-        attachments: [
-          {
-            text: contextualizedTranscriptText.text,
-            footer,
-            fields: [
-              {
-                title: "Status",
-                value: "Completed",
-                short: true,
-              },
-              transcriptIdField,
-            ],
-          },
-        ],
-      });
-      if (contextualizedTranscriptText.context) {
-        await say!({
-          text: contextualizedTranscriptText.context,
-          thread_ts: threadTs,
+      if (shouldAddSpeakerLabels) {
+        const diarizedTranscriptText =
+          await buildDiarizedTranscriptText(transcript);
+        ({ text, status } = getTextAndStatus());
+        transcriptMessageData.text = text;
+        transcriptMessageData.status = status;
+        client.chat.update({
+          token: botToken,
+          channel: message.channel!,
+          ts: message.ts!,
+          ...buildTranscriptMessage(transcriptMessageData),
+        });
+        if (shouldIdentifySpeakers) {
+          const contextualizedTranscriptText = await identifySpeakers(
+            diarizedTranscriptText,
+            aaiClient,
+          );
+          ({ text, status } = getTextAndStatus());
+          transcriptMessageData.text = text;
+          transcriptMessageData.status = status;
+          transcriptMessageData.transcript = contextualizedTranscriptText.text;
+          transcriptMessageData.speakerIdentificationContext =
+            contextualizedTranscriptText.speakerIdentificationContext;
+          client.chat.update({
+            token: botToken,
+            channel: message.channel!,
+            ts: message.ts!,
+            ...buildTranscriptMessage(transcriptMessageData),
+          });
+        }
+      } else {
+        const transcriptText = await buildParagraphdTranscriptText(
+          transcript,
+          aaiClient,
+        );
+        ({ text, status } = getTextAndStatus());
+        transcriptMessageData.text = text;
+        transcriptMessageData.status = status;
+        transcriptMessageData.transcript = transcriptText;
+        client.chat.update({
+          token: botToken,
+          channel: message.channel!,
+          ts: message.ts!,
+          ...buildTranscriptMessage(transcriptMessageData),
+        });
+      }
+      if (shouldGenerateSummary) {
+        const summary = await summarizeTranscript(transcript, aaiClient);
+        ({ text, status } = getTextAndStatus());
+        transcriptMessageData.text = text;
+        transcriptMessageData.status = status;
+        transcriptMessageData.summary = summary;
+        client.chat.update({
+          token: botToken,
+          channel: message.channel!,
+          ts: message.ts!,
+          ...buildTranscriptMessage(transcriptMessageData),
         });
       }
     } catch (error) {
