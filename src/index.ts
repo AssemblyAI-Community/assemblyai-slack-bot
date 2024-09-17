@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { App, MessageAttachment } from "@slack/bolt";
+import { App, Context, MessageAttachment } from "@slack/bolt";
 import { AssemblyAI, FileUploadData } from "assemblyai";
 import { buildTranscriptText } from "./transcript";
 
@@ -86,27 +86,105 @@ app.event("app_mention", async ({ event, context, client, say, ...stuff }) => {
       channel: event.channel,
       ts: event.thread_ts! // TODO, check
     });
-    const download = await fetch(replies.messages![0].files![0].url_private_download!, { // TODO: check
-      headers: {
-        'Authorization': `Bearer ${context.botToken}`
-      },
+    const fileName = replies.messages![0].files![0].name;  // TODO, make more robust
+    const footer = `Transcript for ${fileName}`;
+    const defaultText = `Working on it...`;
+    let message = await say({
+      text: defaultText,
+      thread_ts: event.thread_ts!
     });
+    const download = await downloadSlackFile(
+      replies.messages![0].files![0].url_private_download!,
+      context
+    );
+
+    client.chat.update({
+      token: botToken,
+      channel: event.channel,
+      ts: message.ts!,
+      text: defaultText,
+      attachments: [{
+        footer,
+        fields: [
+          {
+            title: 'Status',
+            value: 'Uploading file',
+            short: true
+          }
+        ]
+      }],
+    });
+
     const uploadedFileUrl = await aaiClient.files.upload(download.body!); // TODO: check
     let transcript = await aaiClient.transcripts.submit({
       audio_url: uploadedFileUrl,
       language_detection: true,
       speaker_labels: true,
     });
+    const transcriptIdField =
+    {
+      title: 'ID',
+      value: transcript.id,
+      short: true
+    };
+    client.chat.update({
+      token: botToken,
+      channel: event.channel,
+      ts: message.ts!,
+      text: defaultText,
+      attachments: [{
+        footer,
+        fields: [
+          {
+            title: 'Status',
+            value: 'Transcribing',
+            short: true
+          },
+          transcriptIdField
+        ]
+      }],
+    });
+
     transcript = await aaiClient.transcripts.waitUntilReady(transcript.id);
+
+    client.chat.update({
+      token: botToken,
+      channel: event.channel,
+      ts: message.ts!,
+      text: defaultText,
+      attachments: [{
+        footer,
+        fields: [
+          {
+            title: 'Status',
+            value: 'Formatting',
+            short: true
+          },
+          transcriptIdField
+        ]
+      }],
+    });
     const contextualizedTranscriptText = await buildTranscriptText(event.text, transcript, aaiClient);
     console.log("transcript", contextualizedTranscriptText.text);
     console.log("context", contextualizedTranscriptText.context);
-    await say({
+    client.chat.update({
+      token: botToken,
+      channel: event.channel,
+      ts: message.ts!,
       text: 'Here is the transcript:',
       attachments: [{
         text: contextualizedTranscriptText.text,
-        footer: `Transcript for ${replies.messages![0].files![0].name}`
-      }],
+        footer,
+        fields: [
+          {
+            title: 'Status',
+            value: 'Completed',
+            short: true
+          },
+          transcriptIdField
+        ]
+      },
+      ],
       thread_ts: event.thread_ts!
     });
     if (contextualizedTranscriptText.context) {
@@ -120,9 +198,18 @@ app.event("app_mention", async ({ event, context, client, say, ...stuff }) => {
   }
 });
 
+async function downloadSlackFile(url: string, context: Context) {
+  return await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${context.botToken}`
+    },
+  });
+}
+
 (async () => {
   // Start your app
   await app.start(process.env.PORT || 3000);
 
   console.log("⚡️ Bolt app is running!");
 })();
+
