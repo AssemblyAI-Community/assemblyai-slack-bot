@@ -60,23 +60,7 @@ export const transcribeOptionsBlock: InputBlock = {
           emoji: false,
         },
         value: "speaker_labels",
-      },
-      {
-        text: {
-          type: "plain_text",
-          text: "Identify speakers",
-          emoji: false,
-        },
-        value: "identify_speakers",
-      },
-      {
-        text: {
-          type: "plain_text",
-          text: "Generate summary",
-          emoji: false,
-        },
-        value: "generate_summary",
-      },
+      }
     ],
   },
   label: {
@@ -102,6 +86,44 @@ export const transcribeBlocks: (KnownBlock | Block)[] = [
       },
     ],
   },
+] as const;
+
+export const transcriptActionsBlocks: (KnownBlock | Block)[] = [
+  {
+    "type": "actions",
+    "elements": [
+      {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Identify Speakers",
+          "emoji": false
+        },
+        "value": "identify_speakers",
+        action_id: "identify-speakers-action"
+      },
+      {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Summarize",
+          "emoji": false
+        },
+        "value": "summarize",
+        action_id: "summarize-action"
+      },
+      {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Ask a question",
+          "emoji": false
+        },
+        "value": "ask_question",
+        action_id: "ask-question-action"
+      }
+    ]
+  }
 ] as const;
 
 export type TranscriptMessageData = {
@@ -161,5 +183,6 @@ export function buildTranscriptMessage({
         footer: `Transcript for ${fileName}`,
       },
     ],
+    blocks: isCompleted ? transcriptActionsBlocks : []
   };
 }

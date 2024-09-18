@@ -121,39 +121,17 @@ app.action(
       );
       const shouldAddSpeakerLabels =
         selectedOptions?.includes("speaker_labels") || false;
-      const shouldIdentifySpeakers =
-        selectedOptions?.includes("identify_speakers") || false;
-      const shouldGenerateSummary =
-        selectedOptions?.includes("generate_summary") || false;
-      const statuses = ["Uploading file", "Transcribing"];
-      statuses.push(
-        shouldAddSpeakerLabels && shouldIdentifySpeakers
-          ? "Identifying speakers" // add speaker labels and identify speakers
-          : "Formatting", // build transcript by paragraphs
-      );
-      if (shouldGenerateSummary) statuses.push("Generating summary");
-      statuses.push("Completed");
-      const getTextAndStatus = () => {
-        const status = statuses.shift()!;
-        const text =
-          statuses.length > 0 ? "Working on it..." : "Here is the transcript:";
-        return { text, status };
-      };
-      let text: string;
-      let status: string;
-
+      const defaultText = "Working on it...";
       let replies = await client.conversations.replies({
         token: botToken,
         channel: channelId,
         ts: threadTs,
       });
       const fileName = replies.messages![0].files![0].name!; // TODO, make more robust
-      const footer = `Transcript for ${fileName}`;
-      ({ text, status } = getTextAndStatus());
       let transcriptMessageData: TranscriptMessageData = {
-        text,
+        status: "Uploading file",
+        text: defaultText,
         fileName,
-        status,
       };
       let message = await say!({
         // TODO, check
@@ -175,9 +153,8 @@ app.action(
         speaker_labels: shouldAddSpeakerLabels,
       });
 
-      ({ text, status } = getTextAndStatus());
-      transcriptMessageData.text = text;
-      transcriptMessageData.status = status;
+      transcriptMessageData.text = defaultText;
+      transcriptMessageData.status = "Transcribing";
       transcriptMessageData.id = transcript.id;
       client.chat.update({
         token: botToken,
@@ -189,57 +166,32 @@ app.action(
       transcript = await aaiClient.transcripts.waitUntilReady(transcript.id);
 
       if (shouldAddSpeakerLabels) {
-        const diarizedTranscriptText =
-          await buildDiarizedTranscriptText(transcript);
-        ({ text, status } = getTextAndStatus());
-        transcriptMessageData.text = text;
-        transcriptMessageData.status = status;
+        const diarizedTranscriptText = buildDiarizedTranscriptText(transcript);
+        transcriptMessageData.text = defaultText;
+        transcriptMessageData.status = "Completed";
+        transcriptMessageData.transcript = diarizedTranscriptText
         client.chat.update({
           token: botToken,
           channel: message.channel!,
           ts: message.ts!,
           ...buildTranscriptMessage(transcriptMessageData),
         });
-        if (shouldIdentifySpeakers) {
-          const contextualizedTranscriptText = await identifySpeakers(
-            diarizedTranscriptText,
-            aaiClient,
-          );
-          ({ text, status } = getTextAndStatus());
-          transcriptMessageData.text = text;
-          transcriptMessageData.status = status;
-          transcriptMessageData.transcript = contextualizedTranscriptText.text;
-          transcriptMessageData.speakerIdentificationContext =
-            contextualizedTranscriptText.speakerIdentificationContext;
-          client.chat.update({
-            token: botToken,
-            channel: message.channel!,
-            ts: message.ts!,
-            ...buildTranscriptMessage(transcriptMessageData),
-          });
-        }
       } else {
+        transcriptMessageData.text = defaultText;
+        transcriptMessageData.status = "Formatting";
+        client.chat.update({
+          token: botToken,
+          channel: message.channel!,
+          ts: message.ts!,
+          ...buildTranscriptMessage(transcriptMessageData),
+        });
         const transcriptText = await buildParagraphdTranscriptText(
           transcript,
           aaiClient,
         );
-        ({ text, status } = getTextAndStatus());
-        transcriptMessageData.text = text;
-        transcriptMessageData.status = status;
+        transcriptMessageData.text = "Here is your transcript:";
+        transcriptMessageData.status = "Completed";
         transcriptMessageData.transcript = transcriptText;
-        client.chat.update({
-          token: botToken,
-          channel: message.channel!,
-          ts: message.ts!,
-          ...buildTranscriptMessage(transcriptMessageData),
-        });
-      }
-      if (shouldGenerateSummary) {
-        const summary = await summarizeTranscript(transcript, aaiClient);
-        ({ text, status } = getTextAndStatus());
-        transcriptMessageData.text = text;
-        transcriptMessageData.status = status;
-        transcriptMessageData.summary = summary;
         client.chat.update({
           token: botToken,
           channel: message.channel!,

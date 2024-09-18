@@ -5,9 +5,9 @@ export type ContextualizedTranscriptText = {
   speakerIdentificationContext?: string | null;
 };
 
-export async function buildDiarizedTranscriptText(
+export function buildDiarizedTranscriptText(
   transcript: Transcript,
-): Promise<string> {
+): string {
   let text = "";
   const includeHourInTimestamp = transcript.audio_duration! > 3600;
   for (let utterance of transcript.utterances!) {
