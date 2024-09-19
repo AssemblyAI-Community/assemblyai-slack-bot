@@ -1,11 +1,13 @@
 {
     "display_information": {
-        "name": "AssemblyAI bot"
+        "name": "Transcribe it Better Bot™️",
+        "description": "Get higher quality transcripts, summarize & prompt transcripts.",
+        "background_color": "#2744d3"
     },
     "features": {
         "bot_user": {
-            "display_name": "AssemblyAI bot",
-            "always_online": false
+            "display_name": "Transcribe it Better Bot",
+            "always_online": true
         },
         "slash_commands": [
             {

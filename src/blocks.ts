@@ -1,4 +1,5 @@
 import {
+  ActionsBlockElement,
   Block,
   InputBlock,
   KnownBlock,
@@ -61,28 +62,12 @@ export const transcribeOptionsBlock: InputBlock = {
         },
         value: "speaker_labels",
       },
-      {
-        text: {
-          type: "plain_text",
-          text: "Identify speakers",
-          emoji: false,
-        },
-        value: "identify_speakers",
-      },
-      {
-        text: {
-          type: "plain_text",
-          text: "Generate summary",
-          emoji: false,
-        },
-        value: "generate_summary",
-      },
     ],
   },
   label: {
     type: "plain_text",
     text: "Options",
-    emoji: true,
+    emoji: false,
   },
 } as const;
 
@@ -113,6 +98,116 @@ export type TranscriptMessageData = {
   speakerIdentificationContext?: string | null;
   summary?: string;
 };
+
+export type TranscriptActionsData = {
+  hasSpeakerLabels: boolean;
+  hasBeenSpeakerIdentified: boolean;
+  hasBeenSummarized: boolean;
+  transcriptId: string;
+  messageTs: string;
+  fileName: string;
+};
+
+export function buildQuestionActionsBlocks(
+  actionsData: TranscriptActionsData,
+): Partial<ChatUpdateArguments> {
+  const value = JSON.stringify(actionsData);
+  const text = "Ask your question";
+  return {
+    text,
+    blocks: [
+      {
+        type: "input",
+        block_id: "ask-question-input",
+        element: {
+          type: "plain_text_input",
+          action_id: "ask-question-input",
+        },
+        label: {
+          type: "plain_text",
+          text: text,
+          emoji: false,
+        },
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Submit",
+              emoji: true,
+            },
+            value,
+            action_id: "submit-question-action",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildTranscriptActionsBlocks(
+  actionsData: TranscriptActionsData,
+): Partial<ChatUpdateArguments> {
+  const value = JSON.stringify(actionsData);
+  const elements: ActionsBlockElement[] = [];
+  const text = "What would you like to do next?";
+  if (actionsData.hasSpeakerLabels && !actionsData.hasBeenSpeakerIdentified) {
+    elements.push({
+      type: "button",
+      text: {
+        type: "plain_text",
+        text: "Identify Speakers",
+        emoji: false,
+      },
+      value,
+      action_id: "identify-speakers-action",
+    });
+  }
+  if (!actionsData.hasBeenSummarized) {
+    elements.push(
+      {
+        type: "button",
+        text: {
+          type: "plain_text",
+          text: "Summarize",
+          emoji: false,
+        },
+        value,
+        action_id: "summarize-action",
+      });
+  }
+  return {
+    text,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "plain_text",
+          text,
+        },
+      },
+      {
+        type: "actions",
+        elements: [
+          ...elements,
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Ask a question",
+              emoji: false,
+            },
+            value,
+            action_id: "ask-question-action",
+          },
+        ],
+      },
+    ],
+  };
+}
 
 export function buildTranscriptMessage({
   text,
