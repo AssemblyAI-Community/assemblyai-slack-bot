@@ -1,4 +1,5 @@
 import {
+  ActionsBlockElement,
   Block,
   InputBlock,
   KnownBlock,
@@ -60,13 +61,13 @@ export const transcribeOptionsBlock: InputBlock = {
           emoji: false,
         },
         value: "speaker_labels",
-      }
+      },
     ],
   },
   label: {
     type: "plain_text",
     text: "Options",
-    emoji: true,
+    emoji: false,
   },
 } as const;
 
@@ -88,44 +89,6 @@ export const transcribeBlocks: (KnownBlock | Block)[] = [
   },
 ] as const;
 
-export const transcriptActionsBlocks: (KnownBlock | Block)[] = [
-  {
-    "type": "actions",
-    "elements": [
-      {
-        "type": "button",
-        "text": {
-          "type": "plain_text",
-          "text": "Identify Speakers",
-          "emoji": false
-        },
-        "value": "identify_speakers",
-        action_id: "identify-speakers-action"
-      },
-      {
-        "type": "button",
-        "text": {
-          "type": "plain_text",
-          "text": "Summarize",
-          "emoji": false
-        },
-        "value": "summarize",
-        action_id: "summarize-action"
-      },
-      {
-        "type": "button",
-        "text": {
-          "type": "plain_text",
-          "text": "Ask a question",
-          "emoji": false
-        },
-        "value": "ask_question",
-        action_id: "ask-question-action"
-      }
-    ]
-  }
-] as const;
-
 export type TranscriptMessageData = {
   text: string;
   fileName: string;
@@ -135,6 +98,116 @@ export type TranscriptMessageData = {
   speakerIdentificationContext?: string | null;
   summary?: string;
 };
+
+export type TranscriptActionsData = {
+  hasSpeakerLabels: boolean;
+  hasBeenSpeakerIdentified: boolean;
+  hasBeenSummarized: boolean;
+  transcriptId: string;
+  messageTs: string;
+  fileName: string;
+};
+
+export function buildQuestionActionsBlocks(
+  actionsData: TranscriptActionsData,
+): Partial<ChatUpdateArguments> {
+  const value = JSON.stringify(actionsData);
+  const text = "Ask your question";
+  return {
+    text,
+    blocks: [
+      {
+        type: "input",
+        block_id: "ask-question-input",
+        element: {
+          type: "plain_text_input",
+          action_id: "ask-question-input",
+        },
+        label: {
+          type: "plain_text",
+          text: text,
+          emoji: false,
+        },
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Submit",
+              emoji: true,
+            },
+            value,
+            action_id: "submit-question-action",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildTranscriptActionsBlocks(
+  actionsData: TranscriptActionsData,
+): Partial<ChatUpdateArguments> {
+  const value = JSON.stringify(actionsData);
+  const elements: ActionsBlockElement[] = [];
+  const text = "What would you like to do next?";
+  if (actionsData.hasSpeakerLabels && !actionsData.hasBeenSpeakerIdentified) {
+    elements.push({
+      type: "button",
+      text: {
+        type: "plain_text",
+        text: "Identify Speakers",
+        emoji: false,
+      },
+      value,
+      action_id: "identify-speakers-action",
+    });
+  }
+  if (!actionsData.hasBeenSummarized) {
+    elements.push(
+      {
+        type: "button",
+        text: {
+          type: "plain_text",
+          text: "Summarize",
+          emoji: false,
+        },
+        value,
+        action_id: "summarize-action",
+      });
+  }
+  return {
+    text,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "plain_text",
+          text,
+        },
+      },
+      {
+        type: "actions",
+        elements: [
+          ...elements,
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Ask a question",
+              emoji: false,
+            },
+            value,
+            action_id: "ask-question-action",
+          },
+        ],
+      },
+    ],
+  };
+}
 
 export function buildTranscriptMessage({
   text,
@@ -183,6 +256,5 @@ export function buildTranscriptMessage({
         footer: `Transcript for ${fileName}`,
       },
     ],
-    blocks: isCompleted ? transcriptActionsBlocks : []
   };
 }

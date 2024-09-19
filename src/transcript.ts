@@ -5,9 +5,7 @@ export type ContextualizedTranscriptText = {
   speakerIdentificationContext?: string | null;
 };
 
-export function buildDiarizedTranscriptText(
-  transcript: Transcript,
-): string {
+export function buildDiarizedTranscriptText(transcript: Transcript): string {
   let text = "";
   const includeHourInTimestamp = transcript.audio_duration! > 3600;
   for (let utterance of transcript.utterances!) {
@@ -28,9 +26,6 @@ Return a JSON object with two keys:
 1. "context": Explanation of how you deduced the speaker names.
 2. "speakers": An object with the speaker ID as the key and the identified speaker name as the value.
    If you cannot identify the speaker or are not certain, set the original speaker ID as the value.
-
-Transcript:
-${diarizedTranscriptText}"
   `;
   const taskResponse = await client.lemur.task({
     prompt,
@@ -41,11 +36,11 @@ ${diarizedTranscriptText}"
     console.log("taskResponse", taskResponse);
     let jsonResponse = JSON.parse(taskResponse.response);
 
-    for (const key in jsonResponse) {
+    for (const key in jsonResponse.speakers) {
       const speakerIdPrefix = key.startsWith("Speaker ") ? "" : "Speaker ";
       diarizedTranscriptText = diarizedTranscriptText.replaceAll(
         `${speakerIdPrefix}${key}`,
-        `${jsonResponse[key]}`,
+        `${jsonResponse.speakers[key]}`,
       );
     }
     return {
@@ -94,11 +89,11 @@ function formatTimestamp(
 }
 
 export async function summarizeTranscript(
-  transcript: Transcript,
+  transcriptId: string,
   client: AssemblyAI,
 ): Promise<string> {
   const summaryResponse = await client.lemur.summary({
-    transcript_ids: [transcript.id],
+    transcript_ids: [transcriptId],
     final_model: "anthropic/claude-3-5-sonnet",
   });
   return summaryResponse.response;

@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { App, Context } from "@slack/bolt";
+import { App, BlockButtonAction, Context } from "@slack/bolt";
 import Fuse from "fuse.js";
 import {
   buildDiarizedTranscriptText,
@@ -8,11 +8,14 @@ import {
   summarizeTranscript,
 } from "./transcript";
 import {
+  buildQuestionActionsBlocks,
+  buildTranscriptActionsBlocks,
   buildTranscriptMessage,
   languageInputBlock,
   languageOptions,
   transcribeBlocks,
   transcribeOptionsBlock,
+  TranscriptActionsData,
   TranscriptMessageData,
 } from "./blocks";
 import { getAssemblyAIClient } from "./assemblyai-client";
@@ -102,12 +105,12 @@ app.options("language-options-action", async ({ ack, payload }) => {
   });
 });
 
-app.action(
+app.action<BlockButtonAction>(
   { type: "block_actions", action_id: "transcribe-action" },
   async ({ ack, say, body, client, action, context }) => {
     try {
       await ack();
-      const channelId = body.container.channel_id as string; // TODO, check
+      const channelId = body.channel?.id!; // TODO, check
       const threadTs = body.container.thread_ts as string; // TODO, check
 
       const selectLanguage =
@@ -156,7 +159,7 @@ app.action(
       transcriptMessageData.text = defaultText;
       transcriptMessageData.status = "Transcribing";
       transcriptMessageData.id = transcript.id;
-      client.chat.update({
+      await client.chat.update({
         token: botToken,
         channel: message.channel!,
         ts: message.ts!,
@@ -167,10 +170,10 @@ app.action(
 
       if (shouldAddSpeakerLabels) {
         const diarizedTranscriptText = buildDiarizedTranscriptText(transcript);
-        transcriptMessageData.text = defaultText;
+        transcriptMessageData.text = "Here is your transcript:";
         transcriptMessageData.status = "Completed";
-        transcriptMessageData.transcript = diarizedTranscriptText
-        client.chat.update({
+        transcriptMessageData.transcript = diarizedTranscriptText;
+        await client.chat.update({
           token: botToken,
           channel: message.channel!,
           ts: message.ts!,
@@ -179,7 +182,7 @@ app.action(
       } else {
         transcriptMessageData.text = defaultText;
         transcriptMessageData.status = "Formatting";
-        client.chat.update({
+        await client.chat.update({
           token: botToken,
           channel: message.channel!,
           ts: message.ts!,
@@ -192,13 +195,227 @@ app.action(
         transcriptMessageData.text = "Here is your transcript:";
         transcriptMessageData.status = "Completed";
         transcriptMessageData.transcript = transcriptText;
-        client.chat.update({
+        await client.chat.update({
           token: botToken,
           channel: message.channel!,
           ts: message.ts!,
           ...buildTranscriptMessage(transcriptMessageData),
         });
       }
+
+      await client.chat.postEphemeral({
+        channel: channelId,
+        thread_ts: threadTs,
+        token: botToken,
+        user: body.user.id, // TODO, make more robust
+        ...buildTranscriptActionsBlocks({
+          hasSpeakerLabels: shouldAddSpeakerLabels,
+          hasBeenSpeakerIdentified: false,
+          hasBeenSummarized: false,
+          transcriptId: transcript.id,
+          messageTs: message.ts!,
+          fileName,
+        }),
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  },
+);
+
+app.action("language-options-action",
+  async ({ ack }) => {
+    try {
+      await ack();
+    } catch (error) {
+      console.error(error);
+    }
+  });
+
+app.action("transcribe-options-action",
+  async ({ ack }) => {
+    try {
+      await ack();
+    } catch (error) {
+      console.error(error);
+    }
+  });
+
+app.action<BlockButtonAction>(
+  { type: "block_actions", action_id: "identify-speakers-action" },
+  async ({ ack, say, body, client, action, context }) => {
+    try {
+      await ack();
+      const channelId = body.container.channel_id as string; // TODO, check
+      const threadTs = body.container.thread_ts as string; // TODO, check
+      const actionsData = JSON.parse(action.value!) as TranscriptActionsData;
+      const transcriptId = actionsData.transcriptId;
+      const fileName = actionsData.fileName;
+      const originalTranscriptMessageTs = actionsData.messageTs;
+      const transcript = await aaiClient.transcripts.get(transcriptId);
+      const transcriptText = buildDiarizedTranscriptText(transcript);
+      const contextualizedTranscriptText = await identifySpeakers(
+        transcriptText,
+        aaiClient,
+      );
+      const transcriptMessageData: TranscriptMessageData = {
+        text: "Here is your transcript with identified speakers:",
+        status: "Completed",
+        transcript: contextualizedTranscriptText.text,
+        fileName,
+      };
+      await client.chat.update({
+        token: botToken,
+        channel: body.channel?.id!,
+        ts: originalTranscriptMessageTs,
+        ...buildTranscriptMessage(transcriptMessageData),
+      });
+      if (contextualizedTranscriptText.speakerIdentificationContext) {
+        const identificationText =
+          "Here is some context about how the speakers were identified:";
+        await say!({
+          // TODO, check
+          thread_ts: threadTs,
+          token: botToken,
+          text: identificationText,
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "plain_text",
+                text: identificationText,
+              },
+            },
+            {
+              type: "section",
+              text: {
+                type: "plain_text",
+                text: contextualizedTranscriptText.speakerIdentificationContext,
+              },
+            },
+          ],
+        });
+
+        await delay(2000);
+
+        actionsData.hasBeenSpeakerIdentified = true;
+        await client.chat.postEphemeral({
+          channel: channelId,
+          thread_ts: threadTs,
+          token: botToken,
+          user: body.user.id, // TODO, make more robust
+          ...buildTranscriptActionsBlocks(actionsData),
+        });
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  },
+);
+
+app.action<BlockButtonAction>(
+  { type: "block_actions", action_id: "summarize-action" },
+  async ({ ack, say, body, client, action, context }) => {
+    try {
+      await ack();
+      const channelId = body.container.channel_id as string; // TODO, check
+      const threadTs = body.container.thread_ts as string; // TODO, check
+      const actionsData = JSON.parse(action.value!) as TranscriptActionsData;
+      const transcriptId = actionsData.transcriptId;
+      const summary = await summarizeTranscript(transcriptId, aaiClient);
+      await say!({
+        // TODO, check
+        thread_ts: threadTs,
+        token: botToken,
+        text: "Here is a summary of the transcript:",
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "plain_text",
+              text: "Here is a summary of the transcript:",
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "plain_text",
+              text: summary,
+            },
+          },
+        ],
+      });
+
+      await delay(2000);
+
+      actionsData.hasBeenSummarized = true;
+      await client.chat.postEphemeral({
+        channel: channelId,
+        thread_ts: threadTs,
+        token: botToken,
+        user: body.user.id, // TODO, make more robust
+        ...buildTranscriptActionsBlocks(actionsData),
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  },
+);
+
+app.action<BlockButtonAction>(
+  { type: "block_actions", action_id: "ask-question-action" },
+  async ({ ack, say, body, client, action, context }) => {
+    try {
+      await ack();
+      const channelId = body.container.channel_id as string; // TODO, check
+      const threadTs = body.container.thread_ts as string; // TODO, check
+      const actionsData = JSON.parse(action.value!) as TranscriptActionsData;
+      await client.chat.postEphemeral({
+        channel: channelId,
+        thread_ts: threadTs,
+        token: botToken,
+        user: body.user.id, // TODO, make more robust
+        ...buildQuestionActionsBlocks(actionsData),
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  },
+);
+
+app.action<BlockButtonAction>(
+  { type: "block_actions", action_id: "submit-question-action" },
+  async ({ ack, body, client, action }) => {
+    try {
+      await ack();
+      const channelId = body.container.channel_id as string; // TODO, check
+      const threadTs = body.container.thread_ts as string; // TODO, check
+      const actionsData = JSON.parse(action.value!) as TranscriptActionsData;
+      const question =
+        body.state?.values["ask-question-input"]["ask-question-input"].value!;
+      const lemurResponse = await aaiClient.lemur.task({
+        transcript_ids: [actionsData.transcriptId],
+        prompt: question,
+        final_model: "anthropic/claude-3-5-sonnet",
+      });
+
+      await client.chat.postEphemeral({
+        channel: channelId,
+        thread_ts: threadTs,
+        token: botToken,
+        user: body.user.id, // TODO, make more robust
+        text: `You asked: ${question}\nResponse: ${lemurResponse.response}`,
+      });
+
+      await delay(2000);
+
+      await client.chat.postEphemeral({
+        channel: channelId,
+        thread_ts: threadTs,
+        token: botToken,
+        user: body.user.id, // TODO, make more robust
+        ...buildTranscriptActionsBlocks(actionsData),
+      });
     } catch (error) {
       console.error(error);
     }
@@ -227,6 +444,10 @@ async function downloadSlackFile(url: string, context: Context) {
       Authorization: `Bearer ${context.botToken}`,
     },
   });
+}
+
+async function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 (async () => {
